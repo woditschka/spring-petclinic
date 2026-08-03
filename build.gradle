@@ -1,6 +1,7 @@
 plugins {
   id 'java'
   id 'checkstyle'
+  id 'jacoco'
   id 'org.springframework.boot' version '4.1.0'
   id 'io.spring.dependency-management' version '1.1.7'
   id 'org.graalvm.buildtools.native' version '1.1.2'
@@ -16,7 +17,7 @@ version = '4.0.0-SNAPSHOT'
 
 java {
   toolchain {
-    languageVersion = JavaLanguageVersion.of(17)
+    languageVersion = JavaLanguageVersion.of(25)
   }
 }
 
@@ -60,6 +61,26 @@ dependencies {
 
 tasks.named('test') {
   useJUnitPlatform()
+  finalizedBy tasks.named('jacocoTestReport')
+}
+
+// Coverage is instrumented here so the target in docs/testing-principles.md is
+// checkable through the same quality gate a reviewer already runs. The Maven
+// build carries its own jacoco configuration; keep the two in step.
+jacoco {
+  toolVersion = '0.8.15'
+}
+
+tasks.named('jacocoTestReport') {
+  dependsOn tasks.named('test')
+  reports {
+    xml.required = true
+    html.required = true
+  }
+}
+
+tasks.named('check') {
+  dependsOn tasks.named('jacocoTestReport')
 }
 
 tasks.named("cyclonedxDirectBom").configure {
