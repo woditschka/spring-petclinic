@@ -122,6 +122,18 @@ class PetValidatorTests {
 			assertTrue(errors.hasFieldErrors("birthDate"));
 		}
 
+		@Test
+		void validateWithLongPetName() {
+			petType.setName(petTypeName);
+			pet.setName("A".repeat(31));
+			pet.setType(petType);
+			pet.setBirthDate(petBirthDate);
+
+			petValidator.validate(pet, errors);
+
+			assertTrue(errors.hasFieldErrors("name"));
+		}
+
 	}
 
 }
