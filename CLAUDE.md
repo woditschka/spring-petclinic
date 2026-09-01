@@ -1,4 +1,4 @@
-<!-- harness: 2026-08-01 -->
+<!-- harness: 2026-08-21 -->
 # CLAUDE.md
 
 This file provides guidance to Claude Code when working with code in this repository.
@@ -29,11 +29,11 @@ For the harness shape — the four nested loops, the slice definition, agent rol
 
 ### Pipeline Routing
 
-Mid-slice, run `python3 scripts/handoff.py route` after each dispatch returns and follow its decision. `dispatch` names the next agent(s); `blocked` halts with the errors or the human checkpoint; `escalate` hands the judgment call to the `pipeline-coordinator` agent. Dispatch the coordinator only for `escalate` decisions and for classifying an untriaged fresh request — never for a transition `route` already decided. A pick the `next` skill already triaged — `route`'s `no-active-slice` escalate included — dispatches `product-requirements-expert` directly. A gate failure arrives as a `dispatch` of the upstream agent with the errors in context — re-dispatch it with them. Each decision's `rule` names the matched condition; the `handoff-routing` skill § Handoff Conditions maps rule names to the sections that define each dispatch prompt — assemble the prompt from the mapped section. A `process-findings` decision with `halt_after: true` halts after the dispatch returns (`handoff-routing` § Blocking). For direct invocation when the target agent is known, use the agent selection table in the `handoff-routing` skill.
+Mid-slice, run `python3 scripts/handoff.py route` after each dispatch returns and follow its decision. The JSON names the decision kind (`dispatch`, `blocked`, `escalate`), the next agent(s), the matched `rule`, and the context to relay; `blocked` always halts for a human. Dispatch the `pipeline-coordinator` only for `escalate` decisions and for classifying an untriaged fresh request — never for a transition `route` already decided. A pick the `next` skill already triaged — `route`'s `no-active-slice` escalate included — records its `intake-decision` and follows the `intake-ready` dispatch. A recovery dispatch assembles its prompt from the section the `handoff-routing` skill § Handoff Conditions maps to the decision's `rule`; a reviewer dispatch carries a paste-ready `prompt_note` — append it verbatim as the prompt's final sentence, composing no round context. A `process-findings` decision with `halt_after: true` halts after the dispatch returns (`handoff-routing` § Blocking). For direct invocation when the target agent is known, use the agent selection table in the `handoff-routing` skill.
 
-**Discussions run in root.** A feature or architecture discussion is a conversation, and subagents cannot converse — root conducts it per [`agentic-harness.md` § Conversations Stay in Root](.claude/skills/handoff-routing/agentic-harness.md). Dispatch the owning expert once the human confirms a resolved exit, carrying the distilled decisions. A specialist can open one mid-dispatch: a `consultation-request` targeting `human` halts the pipeline (`human-consultation`) until root records the human's answer as the `consultation-response`.
+**Discussions run in root.** A feature or architecture discussion is a conversation, and subagents cannot converse — root conducts it per [`agentic-harness.md` § Conversations Stay in Root](.claude/skills/handoff-routing/agentic-harness.md). Slice intake runs under the `intake` skill and exits by recording an `intake-decision` — the owner's request and decisions, quoted verbatim. `route` then dispatches the product expert on the record, even when recorded non-goals make the outcome look foregone. Root relays and quotes; it never authors a product or design statement. A specialist can open one mid-dispatch: a `consultation-request` targeting `human` halts the pipeline (`human-consultation`) until root records the human's answer as the `consultation-response`. A scope question never ends the session in prose. When no reply can arrive — or when unsure — record and proceed: fresh intake seeds an `intake-decision` from the request as stated; a mid-slice question dispatches the owning expert with the question as stated. A conflict pauses as its recorded `consultation-request`, never an unrecorded refusal. The shortcut covers questions, never answers: root never authors a `consultation-response`, and `author: "human"` marks a human's actual words. Absent a reply, the recorded pause is the session's correct end. The seed license lapses while a `consultation-request` targeting `human` is pending: that pause resolves only through the human's reply, never through a re-seeded intake. An answer that only restates the request decides nothing — the request is never the override.
 
-**Skip agents for** work that leaves no pipeline artifact to audit: git operations, one-off commands, answering questions about the codebase. **Use review agents for** formal code reviews: "review changes" or "review code" triggers the review agents, never direct implementation.
+**Skip agents for** work that leaves no pipeline artifact to audit: git operations, one-off commands, answering questions about the codebase. A scope decline is never artifact-less: the expert's `consultation-request` is the deliverable, so the conflict dispatches rather than ends the session. **Use review agents for** formal code reviews: "review changes" or "review code" triggers the review agents, never direct implementation.
 
 ### Surfacing reviewer and grader output
 
@@ -100,16 +100,17 @@ Pipeline logic lives in skills (`.claude/skills/`), not in agent definitions. Al
 |-------|---------|
 | `handoff-routing` | Routing table, handoff conditions, gates, recovery, root-applied procedures, state files |
 | `handoff-append` | The writer contract for the handoff log: sanctioned append form, append-only discipline, permission setup |
-| `handoff-board` | The reader board for the handoff log: render one slice to the terminal (header, review matrix, timeline) |
+| `handoff-board` | The reader board for the handoff log: render each slice to the terminal (header, review matrix, timeline) |
 | `prd-authoring` | PRD format, boundary rules, requirement template |
 | `tdd-workflow` | TDD cycle process, design-check decision tree, document ownership |
 | `code-quality-gate` | The quality gate: required checks, autofix audit, completion criteria |
 | `review-workflow` | Review process, feedback tags, output format, partial-artifact contract; reference tables in its `reference.md` |
 | `code-quality-review` | Code quality checklist (specialize per stack) |
 | `test-review` | Test quality checklist, security testing, dynamic analysis |
-| `security-review` | Security checklists, threat model, severity, supply chain verification |
+| `security-checks` | Security checklists, threat model, severity, supply chain verification |
 | `design-validation` | Architectural validation checklist for feature approval |
 | `new-feature` | Clear scratch directory, start fresh feature context |
+| `intake` | Slice intake as a live discussion under the product expert's contract; exits by recording the owner's decisions verbatim (`intake-decision`) |
 | `adr-template` | ADR format, naming conventions, when to create |
 | `audit-agents` | Audit agent config for consistency, coherence, cross-tool parity |
 | `change-grading` | Grade a passing change for how much human attention it deserves before merge (advisory) |
@@ -125,7 +126,7 @@ This table is the stack-agnostic core. When a stack ships its own skills (for ex
 
 ### Reference
 
-See [`.claude/agents/README.md`](.claude/agents/README.md) for agent roles, model assignments, and scratch directory lifecycle.
+See [`.claude/agents/README.md`](.claude/agents/README.md) for agent roles and model assignments, and the `handoff-append` skill's [`scratch-contract.md`](.claude/skills/handoff-append/scratch-contract.md) for the scratch directory lifecycle.
 
 ## Stack-specific skills
 
@@ -174,7 +175,7 @@ All documentation, comments, and PRDs must follow the writing standards of the `
 
 Agents collaborate through `.scratch/` (git-ignored). One feature at a time. Never use system `/tmp` — use `.scratch/tmp/`.
 
-See [`.claude/agents/README.md`](.claude/agents/README.md) for structure, file lifecycle, templates, and rules.
+See the `handoff-append` skill's [`scratch-contract.md`](.claude/skills/handoff-append/scratch-contract.md) for structure, file lifecycle, templates, and rules.
 
 ## Quality Gate
 

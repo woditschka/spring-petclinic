@@ -22,8 +22,8 @@
 #   concern in the grader. Absence of a positive classification is not evidence
 #   of safety.
 #
-# Globs use fnmatch semantics with '/' significant; '**' matches across
-# directories. Keep the lists short and the patterns specific.
+# Globs use fnmatch semantics — a bare '*' also crosses '/'; '**' matches
+# across directories. Keep the lists short and the patterns specific.
 
 # Files whose changes are test code (green-suite evidence, not production risk).
 # Patterns are matched with fnmatch, where '**/' requires at least one parent
@@ -89,7 +89,7 @@ exclude_globs = []
 # is manual (see the reference's docs/adoption-guide.md § Distribution channels); /materialize
 # respects whatever is declared here and never flips it.
 channel = "marketplace"
-spec_version = "0.1.0"
+spec_version = "0.2.0"
 # Tool surfaces installed (claude is always on; copilot, opencode, junie optional).
 # materialize installs only these and never adds one on upgrade. Re-run /materialize
 # after editing.
@@ -114,6 +114,14 @@ extra_reviewers = []
 # grader can still be run by hand via the change-grading skill. Absent or non-boolean
 # reads as true, so an upgrade keeps grading on unless the project opts out.
 auto_grade = true
+
+[gate]
+# The quality gate's command and verb vocabulary — the single declared home
+# for the gate facts. The build-pass/build-failure schemas read `verbs`
+# (enumFrom "gate.verbs"): a recorded gate verb outside this list fails
+# record validation. Extending the gate means extending this list.
+command = "./gradlew build && ./gradlew test && ./gradlew check"
+verbs = ["handoff-log", "build", "test", "format", "check", "autofix-audit", "contracts-sync"]
 
 # Risk-proportional review.
 # Optional: an absent [review] table uses the engine defaults below, so the
@@ -162,13 +170,14 @@ config = ["**/*.toml", "*.toml", "**/*.yaml", "*.yaml", "**/*.yml", "*.yml", "**
 #                                      prefix is kept in the id (packages/ -> "packages/ui")
 #   "regex:<pattern>"               -> group 1 of the pattern's match; a non-matching
 #                                      path falls back to the parent directory
-#   "gradle" / "maven"              -> named layout: the source-set root of a
+#   "gradle" / "maven"              -> named layout: the module root of a
 #                                      Gradle/Maven tree (app/src/main/java/... ->
-#                                      "app/src/main/java"); sugar for
-#                                      regex:(.*?/src/(?:main|test)/[^/]+)/
+#                                      "app/src"); sugar for
+#                                      regex:((?:.*?/)?src)/(?:main|test)/[^/]+/
 #
-# The named layout covers single- and multi-module trees alike: a path with no
-# module segment before src/ falls back to the parent directory.
+# The named layout covers single- and multi-module trees alike: with or
+# without a module segment before src/, the id is the module root. A prod
+# file and its test share one id.
 [[module]]
 match = "src/main/java/**"
 from = "gradle"

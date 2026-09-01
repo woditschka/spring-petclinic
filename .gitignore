@@ -107,3 +107,5 @@ scripts/tests/handoff/test_schema.py
 scripts/tests/handoff/test_records.py
 scripts/tests/handoff/test_routing.py
 scripts/tests/handoff/test_view.py
+scripts/grading/contracts.py
+scripts/tests/grading/test_contracts.py
