@@ -51,6 +51,8 @@ This applies broadly: never add prose that restates what the code already says. 
 
 The ratio moves when logic moves. A slice that lifts a rule into a unit exercisable without framework context adds a unit test and retires a slice test. A slice that adds a new rule to a controller widens the gap. A reviewer applies this by asking of each new rule: could this have been tested without booting the framework? If yes, it belongs in a unit and the test belongs in the base of the pyramid.
 
+The question applies to rules the design doc assigns below the boundary. A rule `system-design.md` assigns to the web controller (request binding, normalization, response shaping) is tested at the web level. Extracting it for a unit test is placement drift, not pyramid progress.
+
 ## Coverage
 
 | Target | Scope |
