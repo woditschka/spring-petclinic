@@ -82,13 +82,13 @@ This section is **open**: it ships a harness default that the project adapts to 
 | **Value object** | Immutable data defined by its attributes; equality by value; no identity | Cheap real objects for tests; no shared mutable state |
 | **Aggregate** | Root owns the consistency boundary for its children; outside code enters only through the root | Invariants enforced in one place |
 | **Repository** | Persistence gateway, one per aggregate root; the default persistence boundary | The core never touches I/O directly |
-| **Web controller** | Adapts one HTTP surface to the domain: binds the request, delegates, selects the response. Holds no business rule | The domain stays reachable without the web layer |
+| **Web controller** | Adapts one HTTP surface to the domain: binds the request, delegates, selects the response. Holds no business rule. Normalizing a request parameter to its permitted range or shape is binding, not a business rule | The domain stays reachable without the web layer |
 | **Form validator** | Stateless check over one bound type, reporting field-level rejections; expresses rules the type's own constraints cannot | Validation is testable without the web layer |
 | **Type formatter** | Bidirectional conversion between a domain type and its display form, for request binding and rendering | Parsing lives in one place per type, not per form |
 | **Mapped superclass** | Shared persistence-mapped state factored out of sibling entities; never instantiated directly | One definition of identity and shared fields |
 | **Framework configuration** | Declares beans and framework wiring for one concern; carries no business rule | Wiring is grouped by concern, not scattered |
 
-**Controllers carry rules today that this catalog places elsewhere.** Duplicate-name, future-birth-date, and non-future-visit-date checks live in controller methods. The *Web controller* row states the rule; the deviation is recorded in [`system-design.md`](system-design.md#package-structure) and stays an open question. A new rule added to a controller is a fresh violation, not covered by the existing one.
+**Controllers carry rules today that this catalog places elsewhere.** Duplicate-name, future-birth-date, and non-future-visit-date checks live in controller methods. The *Web controller* row states the rule; the deviation is recorded in [`system-design.md`](system-design.md#package-structure) and stays an open question. A new rule added to a controller is a fresh violation, not covered by the existing one. A business rule constrains domain state or a domain decision and holds at every entry point; a parameter's range or shape belongs to the request that carries it.
 
 ### Available, not currently used
 
