@@ -1,4 +1,4 @@
-<!-- harness: 2026-07-31 -->
+<!-- harness: 2026-10-30 -->
 # Security Principles
 
 This brief specializes the harness's non-negotiable security laws for this project. The four laws — security as an emergent property, defense in depth, least privilege, fail secure — are harness-owned: a project decides *how* it meets them, never *whether*. This document carries that "how": the project's trust-boundary map and the stack's state-of-the-art security defaults. The feature-implementer designs against it; the security-reviewer enforces it; the exhaustive item-by-item checklist lives in the `security-review` skill.
@@ -17,7 +17,7 @@ A trust boundary is any point where data or control crosses from less-trusted to
 
 Internal code, past the boundary, trusts its contracts — defensive checks belong at the boundary, not scattered through the core.
 
-## Realization
+## Language Realization
 
 The vulnerability classes that matter in this Java/Spring Boot web application, each with the principle it puts at risk and the control that prevents it. Derived from the dependency policy and threat model in [`system-design.md`](system-design.md#threat-model). These are the bar a change starts from, not a floor to argue down. The `security-review` skill holds the exhaustive checklist.
 
@@ -43,3 +43,10 @@ What the framing does not excuse is a change that makes things worse than that b
 ### Applying this section
 
 A reviewer decides pass or fail per row, against the change only, by asking two questions. Does the change introduce a class in this table? Does it leave the application weaker than the baseline in [system-design.md#security-context](system-design.md#security-context)? A "no" to both passes. The pre-existing absences in that baseline are never findings; anything the change itself introduces always is.
+
+## Standing Gaps
+
+Checks the project does not run, and why. A reviewer states a listed gap in one clause and raises nothing for it. A gap not listed here is raised once, as a `clarify` finding to the owner, and then listed.
+
+- **No dependency vulnerability scan runs in the build.** The build emits a CycloneDX SBOM and nothing consumes it. Dependency risk is reviewed per change through the four checks in [system-design.md § Adding a New Dependency](system-design.md#adding-a-new-dependency).
+- **No authentication, authorization, or CSRF protection**, by the demonstration framing recorded under § Language Realization. Their absence is the baseline, never a finding; a change that widens the exposed surface is.

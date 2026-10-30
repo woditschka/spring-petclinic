@@ -1,4 +1,4 @@
-<!-- harness: 2026-07-31 -->
+<!-- harness: 2026-10-30 -->
 # Architecture Principles
 
 This document carries the tactical pattern catalog this project builds with. It specializes the strategic properties the harness works from — one canonical vocabulary, bounded modules, an isolated unit-testable domain core, and the state-vs-history document split.
@@ -109,6 +109,52 @@ Persistence is a spectrum; choose per project, and the domain core is identical 
 3. **Direct mapping** — when the project **owns both ends** and persistence **follows the model closely**, the model may carry persistence or serialization mapping metadata directly. This is the sanctioned substitute for a hand-written mapper at that controlled boundary — compliant, not a missing anti-corruption layer.
 
 Direct mapping has two gates: the project owns both ends, **and** the stored shape tracks the model closely enough that a separate mapper would be pure boilerplate. Otherwise keep a separate persistence model behind a mapper. Anti-corruption is mandatory only at boundaries the project does **not** control — external APIs, foreign schemas, another system's events.
+
+## Language Realization
+
+How this project implements the catalog in Java and Spring Boot. The persistence entities fall under the scoped exception in § Domain Core; the rows below bind them only where that exception does not reach.
+
+### Building Blocks
+
+| Pattern | Implementation |
+|---------|----------------|
+| Value object | Immutable Java `record`; collections via `List.copyOf()` / `Map.copyOf()` |
+| Aggregate | A framework-mapped entity under the scoped exception today; a new aggregate the framework does not instantiate is an immutable `record` |
+| Repository | Spring Data repository interface, one per aggregate root; it stores and loads that aggregate and nothing else |
+| Application service | Spring `@Service`; it sequences one use case across collaborators (catalog: available, not currently used) |
+| Adapter | Spring `@Component`; it adapts one external system or one kind of I/O |
+| Domain service | Plain class of static pure methods; no state, no injected dependency, no stereotype annotation |
+| Anti-corruption mapper | Static pure method, `from{Source}()` / `to{Target}()`; a complex mapping delegates to a plain stateless class; no instance state, no injected dependency, no stereotype annotation |
+| Configuration | `@ConfigurationProperties` record, validated at startup, in the owning package |
+
+A Spring stereotype annotation is the one marker of a bean: `@Repository`, `@Service`, `@Component`, or `@Configuration`. Neither state nor injected dependencies decide bean-ness. The stereotype names the bean's role, so a use case that drifted into an adapter is visible at its declaration. A `@ConfigurationProperties` record binds settings and sits outside this mapping. A stateless helper over a type the project does not own may be a static utility instead of a bean (§ Naming).
+
+### Logic Placement
+
+A bean orchestrates; domain objects, domain services, and mappers decide. A bean holds four things: the sequence of steps, the I/O and external-service calls, the error and logging policy, and configuration reads. Three things leave it.
+
+| What leaves a bean | Where it goes |
+|--------------------|---------------|
+| A decision about domain state: a merge rule, how an action applies, a predicate over candidates | A method on the value object when the decision concerns one object; a domain service when it spans several |
+| A change of representation: a view model, a filename composition | An anti-corruption mapper |
+| Parsing and validation of an external format | An anti-corruption mapper or a domain service |
+
+This project's controllers hold rules today, the deviation the *Web controller* row in § Pattern Catalog records. The table names where a new rule lands; it never widens the deviation. A behavior method on a domain type takes no dependency. A bean's length tracks the number of steps it sequences; growth signals a missing use case, never room for logic. Placement is checked at code review; no build gate marks it.
+
+### Module Layout
+
+The module is the feature package (`owner`, `vet`), as the feature-package ADR records. A feature package holds its entities, repository interfaces, controllers, validators, and formatters together; its controllers are package-private, and its entities and repository interfaces are the API another package may use. The `model` package is the recorded home of the shared mapped superclasses and takes no feature type; the `system` package holds cross-cutting framework configuration. A feature package that grows gets role-named sub-packages (`domain/`, `mapper/`, `repository/`, `config/`), never a second top-level package for the same concern. New technical-layer packages at application level (`service/`, `controller/`, `dto/`) are forbidden.
+
+### Java Idioms
+
+| Principle | Rule | Rationale |
+|-----------|------|-----------|
+| **Map domain types directly when the project owns both ends** | Value objects stay immutable `record`s (or `@Embeddable`); an aggregate may be Hibernate-mapped via field access and a reconstitution constructor — a `protected` no-arg the mapper uses, while the business constructors still enforce invariants. Reserve a DTO/mapper layer for external API or schema contracts. | No boilerplate mapping for owned types; the domain keeps its invariants and stays free of the ORM lifecycle. |
+| **Prefer specification annotations over vendor annotations** | Use Jakarta Persistence and Jakarta Validation (`jakarta.persistence.*`, `jakarta.validation.*`); reach for vendor-specific annotations (`org.hibernate.*`, Hibernate Validator extras) only where the specification cannot express the requirement. For serialization, rely on native `record` support and add `@Json*` only when the wire contract requires it. | Standard annotations keep the domain portable across implementations; vendor lock-in is a deliberate exception, not the default. |
+| **Modern Java idioms** | Use current Java features: `record` for value objects, `var` for local type inference, `Stream` pipelines over `for`-loops, `Optional` over null checks, pattern matching over type casting, text blocks for multi-line strings. | Modern idioms reduce boilerplate and make intent explicit. |
+| **Fluent method chaining** | Prefer chained fluent calls over imperative step-by-step mutation: Stream pipelines, `Optional` chains, AssertJ chains. | Fluent chains read as a single declarative expression with fewer intermediate variables. |
+
+These principles apply equally to production code and test code. Tests are first-class code: they use the same immutable records, streams, fluent chains, and modern Java idioms.
 
 ## Naming
 

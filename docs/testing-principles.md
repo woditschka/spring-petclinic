@@ -1,4 +1,4 @@
-<!-- harness: 2026-07-31 -->
+<!-- harness: 2026-10-30 -->
 # Testing Principles
 
 This document defines how this project writes, structures, and organizes tests. The principles are language-agnostic; language-specific conventions live in the project's `CLAUDE.md`.
@@ -41,27 +41,47 @@ This applies broadly: never add prose that restates what the code already says. 
        +---------------+
 ```
 
-| Layer | Scope | I/O | Count |
+| Layer | Scope | I/O | Share |
 |-------|-------|-----|-------|
 | **Unit** | Single function or class | None — pure logic | ~80% of tests |
 | **Integration** | Multi-component with real I/O | Real filesystem, real data | ~15% of tests |
 | **E2E** | Full pipeline | Real filesystem, real output | ~5% of tests |
 
+The pyramid is a pyramid of units in the test-driven sense. Its layers are the levels of abstraction the code is written at, and a test lives at the level of the unit it drives. A unit is the smallest public seam with logic of its own: a pure function, a value object, an aggregate root. The layer above is itself a unit, the client, whose collaborators are the units below; its tests are sociable, running the real collaborators and asserting only the composition. The table shows the same layers by their I/O. A test with no I/O is a unit test, whether it drives one unit or a client with its real collaborators. Real I/O makes it an integration test; the full pipeline is end-to-end.
+
+The bet is test-driven design. The first test at a seam is red before the seam exists, so testability pressure decides where the seams go. The test is written first as the API's first client, against calls that do not exist yet. The red compile is the design review: an awkward call changes the API, never the test. A design is judged by whether a client builds on a unit without reaching inside it. On the domain side the seam is the aggregate root as the architecture brief defines it: one entry point, invariants held inside the consistency boundary, internals unreachable from outside. In code it is the Single Level of Abstraction Principle: a function reads at one level and delegates to functions one level down, or composes siblings at its own level. The loop that produces the shape, red at the seam, green, refactor at each green, is the `tdd-workflow` skill's.
+
 **The ratios are the target shape, and this codebase does not currently hold it.** Business rules presently live in controllers and validators rather than in an independently testable core, as `system-design.md` § Package Structure records. The bulk of existing tests therefore boot part of the web layer. They are integration tests by this table's definition, whatever their file names suggest. The gap is a property of where the logic sits, not of how the tests are written.
 
 The ratio moves when logic moves. A slice that lifts a rule into a unit exercisable without framework context adds a unit test and retires a slice test. A slice that adds a new rule to a controller widens the gap. A reviewer applies this by asking of each new rule: could this have been tested without booting the framework? If yes, it belongs in a unit and the test belongs in the base of the pyramid.
 
-The question applies to rules the design doc assigns below the boundary. A rule `system-design.md` assigns to the web controller (request binding, normalization, response shaping) is tested at the web level. Extracting it for a unit test is placement drift, not pyramid progress.
+## Seams
+
+A test attaches at the seam a client calls: the aggregate root, the command, the engine's entry. A private helper is covered through its root, and extraction for readability alone earns no suite. Extraction earns a suite when the extracted unit carries a decision table a client would otherwise repeat; the extraction is what earns the tests. A rule reachable through no public seam is a design smell, not a testing problem. The aggregate root that owns the rule becomes public, and its internals stay private behind it. Widening a private helper's visibility for a test is the placement smell the review flags.
+
+A suite imports what a client imports: the package, or the module that declares the seam. It never imports the file that happens to hold a helper, so code that moves between files moves no test.
+
+The pyramid's question, could this rule have been tested without the framework, applies to rules the design doc assigns below the boundary. A rule `system-design.md` assigns to the web controller (request binding, normalization, response shaping) is tested at the web level. Extracting it for a unit test is placement drift, not pyramid progress.
 
 ## Coverage
 
-| Target | Scope |
-|--------|-------|
+The measure of a suite is logical coverage. Every decision path and every equivalence class of a unit's inputs appears once, in the unit's own suite, with boundaries tested where the code compares. A one-line predicate earns one test. A decision table earns one table-driven test with a row per class when every row yields the same kind of outcome (a value, a refusal, a side effect). Rows of different kinds are separate tests. A second test through the same class proves nothing further.
+
+The client above tests only the logic it adds: which collaborators it consults in which situation, and how it composes their results. It exercises a collaborator through one representative path per decision it makes, never through the collaborator's case table. Every branch of the composition still appears once; what the layer skips is repetition, not rigor. The test to remove is a higher-level test whose only assertion is a value a collaborator computes. The case moves down to that unit, and the higher-level test keeps one assertion showing the collaborator was consulted.
+
+Line coverage is measured, never targeted. A drop signals untested behavior slipped in; a rise proves nothing by itself, and raising it with assertion-free tests is a defect.
+
+| Tripwire | Scope |
+|----------|-------|
 | 80% line coverage | Domain and core packages |
 
-Coverage is judged by behavior exercised, not lines touched. The number is a tripwire, not a goal: a drop below the target signals untested behavior slipped in; reaching it proves nothing by itself. Raising coverage with assertion-free tests is a defect, not progress.
+**How it is measured.** Coverage is instrumented in the Gradle build and reported by the quality gate, so the tripwire in this table is checkable through the same command a reviewer already runs. A tripwire no command can evaluate is not a principle — it is a wish, and it was one here until the instrumentation was wired in.
 
-**How it is measured.** Coverage is instrumented in the Gradle build and reported by the quality gate, so the target in this table is checkable through the same command a reviewer already runs. A target no command can evaluate is not a principle — it is a wish, and it was one here until the instrumentation was wired in.
+## The Cost of a Test
+
+Every test is paid for on every refactor, so the count is a cost, never a score. A test earns its place when a plausible change to the code would fail it and no other test does. A boundary the code never compares against is not a boundary of the unit. A behavior-preserving change that rewrites more test lines than source lines has found tests coupled to structure, and the tests are what the finding names.
+
+The review runs in both directions. A missing-test finding names the change to the code it would catch. A test no change would fail, and a case table a client repeats, are findings of the same weight: they cost reading time on every change and catch nothing. The bar is a floor for what ships, never a ceiling to climb. A change is done when it ships green against the bar, and a finding that adds work without naming the defect it prevents is itself the defect.
 
 ## Mocking Policy
 
@@ -73,11 +93,13 @@ Prefer real implementations over mocks in all layers.
 | **Real I/O for integration** | Use real files, real filesystem, real test data. |
 | **Mock only at system boundaries** | HTTP clients, WebSocket connections, external APIs — these are the only acceptable mock points. |
 | **Never mock internal code** | Internal packages, domain objects, and services use real implementations. |
-| **Hand-write mocks** | When mocking is necessary, prefer hand-written simple implementations. A mock framework is a last resort, not the default. |
+| **Hand-write mocks** | When mocking is necessary, prefer hand-written simple implementations. A mock framework is a last resort, not the default. The slice's design record names the double per boundary. |
 
 **The one sanctioned mock is the framework's in-process web test harness.** It stands in for the HTTP transport — a system boundary — while driving the framework's real dispatch, binding, and validation machinery. Use it for web-layer tests. The project's `CLAUDE.md` names the concrete harness for this stack.
 
 **Mock-framework stubs are tolerated, not encouraged.** The existing suite stubs collaborators with a mock framework, and that usage may stay. A new test reaches for a real implementation or a hand-written double first; a framework stub is a conscious exception, chosen only when neither fits. The goal is that new code finds better seams to test through, not that old tests get rewritten.
+
+**A stub is a stand-in, not an assertion.** A stub answering any argument says nothing about which argument the code sent. When the argument is the behavior under test, assert it through the outcome the test can observe; an interaction assertion that restates an outcome a behavioral assertion already covers is noise.
 
 If a test needs more lines of setup than assertion, that is a signal the production code needs a simpler interface — not that the test needs mocks.
 
@@ -93,7 +115,7 @@ Tests describe behavior, not implementation. The name should read as a specifica
 |------------|------|
 | Test class/file names | Describe the scenario or unit under test |
 | Test method/function names | `the{Subject}Should{Outcome}` — state what must be true, not what is called |
-| Parameterized tests | Same method name, data-driven via table or CSV source |
+| Data-driven tests | One assertion over an input table; the name states every row; a distinct behavior is its own test |
 
 **Applies to tests written or modified from 2026-07-31 onward.** The existing suite predates this school and largely mirrors production method names; renaming it wholesale is not required, and a slice that touches a test renames only that test.
 
@@ -104,10 +126,10 @@ Every value in a test falls into one of three tiers. The naming convention makes
 | Tier | Purpose | Naming Convention | Example |
 |------|---------|-------------------|---------|
 | **Meaningful** | Directly affects the expected outcome | Role-describing name | `QUANTITY`, `DISCOUNT_RATE`, `HOURLY_WAGE` |
-| **Irrelevant** | Required by the API but has no bearing on outcome | `SOME_` / `ANY_` prefix, or anonymous factory | `SOME_EMAIL`, `ANY_ADDRESS`, `createAnEmployee()` |
+| **Irrelevant** | Required by the API but has no bearing on outcome | `SOME_` / `ANY_` prefix, or a named default | `SOME_EMAIL`, `ANY_ADDRESS`, `anOwner()` |
 | **Mystery** | Bare literal with no explanation | **Eliminate** | `42`, `"hello@x.com"` |
 
-A test with zero Tier 3 values is self-documenting. The reader scans names alone and knows which data drives the test and which is scaffolding.
+A named value that copies a production constant (a page size, a limit) is hidden coupling: read the constant, or assert through the behavior it shapes. A test with zero Tier 3 values is self-documenting. The reader scans names alone and knows which data drives the test and which is scaffolding.
 
 ### Constants Placement
 
@@ -118,38 +140,42 @@ A test with zero Tier 3 values is self-documenting. The reader scans names alone
 
 ## Test Data Construction
 
-### Factory Methods
+### One Construction API
 
-Tests never call production constructors directly. Wrap construction in factory methods owned by the test suite.
+A domain type has one public way to come into being: its constructor, or one named creator such as `Address.of(...)`. The named creator earns its place where the name adds meaning or input is normalized before validation. That entry point takes every mandatory parameter and enforces the type's invariants, so no instance exists in an invalid state. Attributes the domain lets vary after creation, the optional ones first, are set through `with` copies on the type, `owner.withAddress(address)`, each routed through the same entry point. A test varies a mandatory component the same way, since the copy re-enters the entry point. Attributes that belong together form a value object with one wither. Where the group is small and its order reads itself, the wither may take the parts directly, `withAddress("Alexanderplatz 1", "10178 Berlin")`, as a thin overload that builds the value object. A change a business rule governs is a named operation, never a wither.
 
-**Applies to tests written or modified from 2026-07-31 onward.** The existing suite constructs production types directly throughout. That is pre-existing debt, not a standing exemption. A slice touching a test moves that test's construction behind a factory. A slice adding a test writes it behind one from the start. No sweep of the existing suite is required.
-
-```text
-BAD:  new Shipment("WH-01", "Seattle", "Portland", 12.5, "FastFreight", 2)
-GOOD: createShipment("WH-01", "Seattle", "Portland", 12.5, "FastFreight", 2)
-```
-
-When the constructor signature changes, fix one factory method instead of every test.
-
-### Anonymous Factories
-
-When few fields are relevant, create factories that auto-generate irrelevant values and accept only the fields that matter:
+Tests call exactly that API. Production, persistence mapping, and tests construct the same way; there is no test-only builder, factory class, or second construction path.
 
 ```text
-createATeacher("Math")    -- only department matters
-createAProduct(price)     -- only price matters
-createAnEmployee()        -- nothing about the employee matters
+BAD:  createShipment("WH-01", "Seattle", "Portland", 12.5, "FastFreight", 2)   -- a test-only factory; which value matters is invisible
+GOOD: aShipment().withCarrier(FAST_FREIGHT).withWeight(OVERWEIGHT_KG)           -- the type's own API; the varied values are visible
+GOOD: new Money(TEN, EUR)                                                       -- a value object with all-named arguments
 ```
 
-Behind the scenes, the anonymous factory fills in everything else with unique generated data (counter or UUID). Unique generation prevents data collisions when tests share a datastore or run in parallel.
+When the mandatory signature changes, the named defaults are the only test code that changes.
+
+**This project's persistence entities are the scoped exception** `architecture-principles.md` § Domain Core records: the framework instantiates them through a no-argument constructor and populates them through setters, so that sequence is their entry point. The named default is where the sequence lives, `anOwner()`, and a test that cares about one attribute sets that attribute on the default. Every other type realizes the rule in full.
+
+**Applies to tests written or modified from 2026-07-31 onward.** The existing suite constructs production types inline throughout. That is pre-existing debt, not a standing exemption. A slice touching a test moves that test's construction behind the type's entry point and the suite's named defaults. A slice adding a test writes it that way from the start. No sweep of the existing suite is required.
+
+### Named Defaults
+
+An instance whose values do not matter to the test hides behind a one-line named default that calls the type's entry point with irrelevant values:
+
+```text
+aShipment()      -- every mandatory parameter filled with SOME_/ANY_ values
+anOwner()        -- nothing about the owner matters
+```
+
+A named default is a name for values, not a second API. It holds no logic and takes no parameters. It is the only place the test tree fills a mandatory parameter it does not care about. A test that cares about one attribute starts from the default and applies one wither. Where instances share a datastore or run in parallel, the default generates unique values (counter or UUID) so tests never collide.
 
 ### Collapse Irrelevant Dependencies
 
 If the test outcome does not depend on an object, the reader should not see it:
 
 ```text
-BAD:  engine = createAnEngine(); trans = createATransmission(); vehicle = createVehicle(engine, trans, ELECTRIC)
-GOOD: vehicle = createAVehicle(ELECTRIC)
+BAD:  engine = anEngine(); trans = aTransmission(); vehicle = new Vehicle(engine, trans, ELECTRIC)
+GOOD: vehicle = aVehicle().withDrive(ELECTRIC)
 ```
 
 ## Derived Expectations
@@ -178,7 +204,7 @@ Prefer assertion styles that produce chained, readable, self-documenting asserti
 
 ### Stop Re-Testing Other Units
 
-Assert only on the behavior the test owns. Trust that other components' own tests cover them. Build the expected object and compare in one shot rather than asserting on individual fields that belong to another unit.
+Assert only on the behavior the test owns. Trust that other components' own tests cover them. Build the expected object and compare in one shot rather than asserting on individual fields that belong to another unit. A sociable test never repeats a collaborator's case table; the layer rule is in [Test Pyramid](#test-pyramid).
 
 ## Cleanup
 
@@ -188,7 +214,7 @@ If no persistent side effect occurs (no database writes, no file creation), clea
 
 ### Never Share Mutable Fixtures
 
-Shared mutable state causes unrepeatable tests, interacting tests, and mystery guests. Each test builds exactly the state it needs via factory methods.
+Shared mutable state causes unrepeatable tests, interacting tests, and mystery guests. Each test builds exactly the state it needs through the type's entry point and the suite's named defaults.
 
 Shared fixtures are acceptable only when immutable — static reference data that no test modifies.
 
@@ -198,12 +224,12 @@ Register each persistent object at creation time. Let the test framework iterate
 
 ## Testing Vocabulary
 
-All patterns accumulate into a domain-specific testing vocabulary: factory methods, custom assertions, named constants, and `SOME_`/`ANY_` placeholders.
+All patterns accumulate into a domain-specific testing vocabulary: named defaults, custom assertions, named constants, and `SOME_`/`ANY_` placeholders.
 
 Once the vocabulary exists:
-- Writing a new test reuses existing factories and assertions
-- Reading is consistent — developers see `createACustomer(DISCOUNT_PCT)` and understand instantly
-- Maintenance is cheap — API changes update one factory, not every test
+- Writing a new test reuses existing named defaults and assertions
+- Reading is consistent — developers see `aCustomer().withDiscount(DISCOUNT_PCT)` and understand instantly
+- Maintenance is cheap — a signature change updates one named default, not every test
 - Scaling approaches zero cost per new test
 
 Extract shared test utilities into a common base class or utility module. The vocabulary is a project-wide asset.
@@ -241,12 +267,12 @@ When an agent writes or refactors a test, it walks through these checks:
 2. **No narration:** Free of comments and messages that restate code?
 3. **Fluent assertions:** Using the preferred assertion style?
 4. **Linearity:** No branching or loops in the test body?
-5. **Focus:** Only asserting on behavior this test owns?
+5. **Focus:** Only asserting on behavior this test owns, at the unit that owns the logic, with the layer above exercising one representative path through it?
 6. **Whole objects:** Comparing complete expected objects?
 7. **Collection assertions:** Using collection-aware assertions instead of index-based access?
 8. **Named patterns:** Recurring verification sequences extracted?
 9. **Automatic cleanup:** Framework handles teardown?
-10. **Encapsulated construction:** All objects behind factory methods?
+10. **One construction API:** Every object built through the type's entry point and its `with` copies, irrelevant ones behind a named default; no test-only builder or factory?
 11. **No mystery values:** Every literal is named or declared irrelevant?
 12. **Signal vs. noise:** Reader can tell at a glance which values matter?
 13. **Transparent expectations:** Expected values derived from inputs?

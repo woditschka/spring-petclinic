@@ -70,8 +70,12 @@ class OwnerControllerTests {
 	@MockitoBean
 	private OwnerRepository owners;
 
+	private static Owner anOwner() {
+		return new Owner();
+	}
+
 	private Owner george() {
-		Owner george = new Owner();
+		Owner george = anOwner();
 		george.setId(TEST_OWNER_ID);
 		george.setFirstName("George");
 		george.setLastName("Franklin");
@@ -143,7 +147,7 @@ class OwnerControllerTests {
 
 	@Test
 	void processFindFormSuccess() throws Exception {
-		Page<Owner> tasks = new PageImpl<>(List.of(george(), new Owner()));
+		Page<Owner> tasks = new PageImpl<>(List.of(george(), anOwner()));
 		when(this.owners.findByLastNameStartingWith(anyString(), any(Pageable.class))).thenReturn(tasks);
 		mockMvc.perform(get("/owners?page=1")).andExpect(status().isOk()).andExpect(view().name("owners/ownersList"));
 	}
@@ -173,7 +177,7 @@ class OwnerControllerTests {
 
 	@Test
 	void processFindFormWithWhitespaceOnlyLastNameReturnsAllOwners() throws Exception {
-		Page<Owner> tasks = new PageImpl<>(List.of(george(), new Owner()));
+		Page<Owner> tasks = new PageImpl<>(List.of(george(), anOwner()));
 		when(this.owners.findByLastNameStartingWith(eq(""), any(Pageable.class))).thenReturn(tasks);
 
 		mockMvc.perform(get("/owners?page=1").param("lastName", "   "))
